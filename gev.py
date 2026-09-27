@@ -1,4 +1,5 @@
 import numpy as np
+from scipy.optimize import minimize
 
 # convention : xi < 0 -> queue bornée (Weibull), xi > 0 -> queue lourde
 # attention scipy.stats.genextreme utilise c = -xi
@@ -35,3 +36,69 @@ def gev_ppf(p, mu, sigma, xi):
 def gev_sample(mu, sigma, xi, rng):
     mu = np.asarray(mu, dtype=float)
     return gev_ppf(rng.uniform(size=mu.shape), mu, sigma, xi)
+
+
+def nll(theta, x, t):
+    if t is None:
+        mu, log_s, xi = theta
+    else:
+        mu0, a, log_s, xi = theta
+        mu = mu0 + a * t
+    if abs(xi) >= 1:  # vraisemblance pas bornée au dela
+        return np.inf
+    ll = gev_logpdf(x, mu, np.exp(log_s), xi)
+    if not np.all(np.isfinite(ll)):
+        return np.inf
+    return -ll.sum()
+
+
+def fit_gev(x, t=None):
+    """Ajustement GEV par max de vraisemblance.
+    Si t est donné : mu = mu0 + alpha * t (sigma et xi constants)."""
+    x = np.asarray(x, dtype=float)
+
+    # départ : moments d'une gumbel + regression linéaire pour la pente
+    s0 = np.sqrt(6) * x.std() / np.pi
+    if t is None:
+        theta0 = [x.mean() - 0.5772 * s0, np.log(s0), -0.1]
+    else:
+        t = np.asarray(t, dtype=float)
+        a, b = np.polyfit(t, x, 1)
+        theta0 = [b - 0.5772 * s0, a, np.log(s0), -0.1]
+
+    # nelder-mead : pas de gradient à calculer, et le support dépend des paramètres
+    res = minimize(nll, theta0, args=(x, t), method="Nelder-Mead",
+                   options={"maxiter": 20000, "xatol": 1e-8, "fatol": 1e-10})
+    if not res.success:
+        raise RuntimeError(res.message)
+
+    if t is None:
+        mu0, log_s, xi = res.x
+        alpha = 0.0
+    else:
+        mu0, alpha, log_s, xi = res.x
+    k = len(res.x)
+    return {"mu0": mu0, "alpha": alpha, "sigma": float(np.exp(log_s)), "xi": xi,
+            "nll": res.fun, "k": k, "aic": 2 * res.fun + 2 * k}
+
+
+def mu(fit, t=0.0):
+    return fit["mu0"] + fit["alpha"] * np.asarray(t, dtype=float)
+
+
+def borne_sup(fit, t=0.0):
+    if fit["xi"] >= 0:
+        return np.full(np.shape(t), np.inf)
+    return mu(fit, t) - fit["sigma"] / fit["xi"]
+
+
+def return_level(fit, T, t=0.0):
+    T = np.asarray(T, dtype=float)
+    return gev_ppf(1 - 1 / T, mu(fit, t), fit["sigma"], fit["xi"])
+
+
+def return_period(fit, val, t=0.0):
+    # infini si val est au dessus de la borne sup
+    p = 1 - gev_cdf(val, mu(fit, t), fit["sigma"], fit["xi"])
+    with np.errstate(divide="ignore"):
+        return 1 / p
