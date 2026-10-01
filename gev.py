@@ -1,5 +1,6 @@
 import numpy as np
 from scipy.optimize import minimize
+from scipy.stats import chi2
 
 # convention : xi < 0 -> queue bornée (Weibull), xi > 0 -> queue lourde
 # attention scipy.stats.genextreme utilise c = -xi
@@ -102,3 +103,24 @@ def return_period(fit, val, t=0.0):
     p = 1 - gev_cdf(val, mu(fit, t), fit["sigma"], fit["xi"])
     with np.errstate(divide="ignore"):
         return 1 / p
+
+
+def lrt(fit0, fit1):
+    D = 2 * (fit0["nll"] - fit1["nll"])
+    return D, chi2.sf(D, fit1["k"] - fit0["k"])
+
+
+def bootstrap(fit, t, stat, n=1000, seed=0):
+    """Bootstrap paramétrique : on simule depuis le modèle ajusté (mêmes t que
+    les obs), on réajuste et on applique stat() à chaque ajustement."""
+    rng = np.random.default_rng(seed)
+    t = np.asarray(t, dtype=float)
+    out = []
+    for i in range(n):
+        x2 = gev_sample(mu(fit, t), fit["sigma"], fit["xi"], rng)
+        try:
+            f = fit_gev(x2, None if fit["k"] == 3 else t)
+        except RuntimeError:
+            continue
+        out.append(stat(f))
+    return np.array(out)

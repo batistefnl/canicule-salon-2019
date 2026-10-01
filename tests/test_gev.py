@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 from scipy.stats import genextreme
 
-from gev import borne_sup, fit_gev, gev_cdf, gev_logpdf, gev_ppf, gev_sample, return_level, return_period
+from gev import borne_sup, fit_gev, gev_cdf, gev_logpdf, gev_ppf, gev_sample, lrt, return_level, return_period
 
 
 @pytest.mark.parametrize("xi", [-0.3, -0.05, 0.0, 0.2])
@@ -52,3 +52,10 @@ def test_au_dessus_borne():
     rng = np.random.default_rng(3)
     fit = fit_gev(gev_sample(np.full(500, 30.0), 1.0, -0.3, rng))
     assert return_period(fit, borne_sup(fit) + 1) == np.inf
+
+
+def test_lrt():
+    rng = np.random.default_rng(4)
+    t = np.linspace(0, 1, 100)
+    x = gev_sample(30 + 3 * t, 1.0, -0.1, rng)
+    assert lrt(fit_gev(x), fit_gev(x, t))[1] < 1e-3
