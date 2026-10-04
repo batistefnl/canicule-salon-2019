@@ -10,6 +10,7 @@ import numpy as np
 
 from data import load_dataset
 from gev import borne_sup, bootstrap, fit_gev, lrt, return_level, return_period
+from plots import plot_qq, plot_return_levels, plot_series
 
 EVENT = 43.4  # TX du 28/06/2019
 T = np.logspace(0.05, 3, 60)  # périodes de retour de ~1,1 à 1000 ans
@@ -97,6 +98,14 @@ def main():
     Path("results").mkdir(exist_ok=True)
     with open("results/resultats.json", "w") as fp:
         json.dump(res, fp, indent=2, ensure_ascii=False, default=float)
+
+    Path("figures").mkdir(exist_ok=True)
+    plot_series(years, x, fit1, t, return_level(fit1, 100, t), "figures/serie_maxima.png")
+    # observations ramenées à chaque climat (seul mu bouge donc c'est juste une translation)
+    shifted = [x + fit1["alpha"] * (g - t) for g in (g50, g25)]
+    plot_return_levels(T, [return_level(fit1, T, g50), return_level(fit1, T, g25)],
+                       [ci(rl50_b), ci(rl25_b)], shifted, "figures/niveaux_retour.png")
+    plot_qq(x, fit1, t, "figures/qqplot.png")
 
     print(f"\n{len(df)} étés entre {years.min()} et {years.max()}")
     print(f"Test du rapport de vraisemblance : D = {D:.1f}, p = {pval:.1e}")
