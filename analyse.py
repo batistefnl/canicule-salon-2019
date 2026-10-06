@@ -66,6 +66,33 @@ def main():
         pr_b = rp50_b / rp25_b
     pr_b = pr_b[~np.isnan(pr_b)]
 
+    # sensibilité au choix des années (biais de sélection)
+    sens = []
+    for name, mask in [("Toutes les années", years > 0),
+                       ("Sans 2019", years != 2019),
+                       ("Jusqu'à 2018", years < 2019)]:
+        f = fit_gev(x[mask], t[mask])
+        sens.append({
+            "cas": name,
+            "n": int(mask.sum()),
+            "xi": f["xi"],
+            "alpha": f["alpha"],
+            "periode_retour_1950": float(return_period(f, EVENT, g50)),
+            "periode_retour_2025": float(return_period(f, EVENT, g25)),
+            "borne_sup_2025": float(borne_sup(f, g25)),
+        })
+    # ce qu'aurait dit un modèle stationnaire la veille de l'événement
+    f = fit_gev(x[years < 2019])
+    sens.append({
+        "cas": "Stationnaire, jusqu'à 2018",
+        "n": int((years < 2019).sum()),
+        "xi": f["xi"],
+        "alpha": 0.0,
+        "periode_retour_1950": float(return_period(f, EVENT)),
+        "periode_retour_2025": float(return_period(f, EVENT)),
+        "borne_sup_2025": float(borne_sup(f)),
+    })
+
     res = {
         "n_annees": len(df),
         "periode": [int(years.min()), int(years.max())],
@@ -93,6 +120,7 @@ def main():
             "delta_intensite_ic95": list(ci(dI_b)),
             "borne_sup_2025": float(borne_sup(fit1, g25)),
         },
+        "sensibilite": sens,
         "n_boot_valides": len(boot),
     }
     Path("results").mkdir(exist_ok=True)
@@ -123,6 +151,12 @@ def main():
     lo, hi = ci(dI_b)
     print(f"Écart d'intensité 1950 -> 2025 : {fit1['alpha'] * dT:.1f} °C  [{lo:.1f}, {hi:.1f}]")
     print(f"Borne supérieure (climat 2025) : {borne_sup(fit1, g25):.1f} °C")
+    print("\nSensibilité :")
+    for r in sens:
+        print(f"  {r['cas']:<28} xi = {r['xi']:+.3f}  "
+              f"T(1950) = {fmt(r['periode_retour_1950']):>10}  "
+              f"T(2025) = {fmt(r['periode_retour_2025']):>8}  "
+              f"borne 2025 = {r['borne_sup_2025']:.1f} °C")
     print(f"\n({len(boot)} réplications bootstrap valides)")
 
 
